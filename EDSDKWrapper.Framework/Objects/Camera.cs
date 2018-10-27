@@ -14,6 +14,11 @@ namespace EDSDKWrapper.Framework.Objects
     /// <remarks></remarks>
     public class Camera : Item
     {
+        /// <summary>
+        /// The object that is used to lock the live view thread
+        /// </summary>
+        public static readonly object ExecLock = new object();
+
         #region Constants
 
         // public const UInt32 AC_POWER_SOURCE = 0xffffffff;
@@ -826,12 +831,16 @@ namespace EDSDKWrapper.Framework.Objects
         private void DownloadImage(IntPtr dirRef)
         {
             IntPtr stream = IntPtr.Zero;
-            IntPtr data = IntPtr.Zero;
             DirectoryItemInformation dirItemInfo;
 
             try
             {
-                UInt32 returnValue = EDSDKInvokes.GetDirectoryItemInformation(dirRef, out dirItemInfo);
+                UInt32 returnValue = (UInt32)ReturnValue.Ok;
+
+                lock (Camera.ExecLock)
+                {
+                    returnValue = EDSDKInvokes.GetDirectoryItemInformation(dirRef, out dirItemInfo);
+                }
                 ReturnValueManager.HandleFunctionReturnValue(returnValue);
 
                 string fullpath = String.Empty;
@@ -843,22 +852,34 @@ namespace EDSDKWrapper.Framework.Objects
                 {
                     fullpath = System.IO.Path.Combine(Environment.CurrentDirectory, dirItemInfo.FileName);
                 }
-                returnValue = EDSDKInvokes.CreateFileStream(fullpath, FileCreateDisposition.CreateAlways, Access.ReadWrite, out stream);
+
+                lock (Camera.ExecLock)
+                {
+                    returnValue = EDSDKInvokes.CreateFileStream(fullpath, FileCreateDisposition.CreateAlways, Access.ReadWrite, out stream);
+                }
                 ReturnValueManager.HandleFunctionReturnValue(returnValue);
 
-                returnValue = EDSDKInvokes.Download(dirRef, dirItemInfo.Size, stream);
+                lock (Camera.ExecLock)
+                {
+                    returnValue = EDSDKInvokes.Download(dirRef, dirItemInfo.Size, stream);
+                }
                 ReturnValueManager.HandleFunctionReturnValue(returnValue);
 
                 if(returnValue == (uint )ReturnValue.Ok)
                 {
-                    returnValue = EDSDKInvokes.DownloadComplete(dirRef);
+                    lock (Camera.ExecLock)
+                    {
+                        returnValue = EDSDKInvokes.DownloadComplete(dirRef);
+                    }
                 }
                 else
                 {
-                    returnValue = EDSDKInvokes.DownloadCancel(dirRef);
+                    lock (Camera.ExecLock)
+                    {
+                        returnValue = EDSDKInvokes.DownloadCancel(dirRef);
+                    }
                 }
 
-                returnValue = EDSDKInvokes.GetPointer(stream, out data);
                 ReturnValueManager.HandleFunctionReturnValue(returnValue);
             }
             catch (Exception ex)
@@ -868,7 +889,6 @@ namespace EDSDKWrapper.Framework.Objects
             finally
             {
                 EDSDKInvokes.Release(stream);
-                EDSDKInvokes.Release(data);
             }
         }
 
